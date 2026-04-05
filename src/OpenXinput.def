@@ -18,3 +18,5 @@ XInputGetCapabilitiesEx         @108 NONAME
 OpenXInputGetMaxControllerCount @999
 OpenXInputGetDeviceUSBIds       @1000
 OpenXInputGetStateFull          @1001
+OpenXInputGetUserIndex          @1002
+OpenXInputSetUserIndex          @1003

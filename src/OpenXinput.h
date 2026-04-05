@@ -391,12 +391,35 @@ DWORD WINAPI OpenXInputGetStateFull
     _Out_ OPENXINPUT_STATE_FULL* pState        // Receives the current state
 );
 
+DWORD WINAPI OpenXInputGetUserIndex
+(
+    _In_  LPCWSTR lpDevicePath, // Device interface path of the controller to look up
+    _Out_ BYTE*   pUserIndex    // Receives the XInput user index (0 to XUSER_MAX_COUNT-1)
+);
+
+DWORD WINAPI OpenXInputSetUserIndex
+(
+    _In_ LPCWSTR lpDevicePath,    // Device interface path of the controller to reassign
+    _In_ BYTE    dwUserIndex,     // Target XInput user index (0 to XUSER_MAX_COUNT-1)
+    _In_ BOOL    bPowerDownOnChange // Power off the controller(s) to force cross-process re-enumeration
+);
+
+DWORD WINAPI OpenXInputGetDevicePath
+(
+    _In_                      DWORD  dwUserIndex, // XInput user index (0 to XUSER_MAX_COUNT-1)
+    _Out_writes_opt_(*pCount) LPWSTR pDevicePath, // Buffer to receive the path (NULL to query required size)
+    _Inout_                   UINT*  pCount        // In: buffer size in WCHARs; Out: required size including null terminator
+);
+
 #ifdef __cplusplus
 }
 #endif
 typedef DWORD(WINAPI OpenXInputGetMaxControllerCount_t)();
 typedef DWORD(WINAPI OpenXInputGetDeviceUSBIds_t)(DWORD, WORD*, WORD*, WORD*);
 typedef DWORD(WINAPI OpenXInputGetStateFull_t)(DWORD, OPENXINPUT_STATE_FULL*);
+typedef DWORD(WINAPI OpenXInputGetUserIndex_t)(LPCWSTR, BYTE*);
+typedef DWORD(WINAPI OpenXInputSetUserIndex_t)(LPCWSTR, BYTE, BOOL);
+typedef DWORD(WINAPI OpenXInputGetDevicePath_t)(DWORD, LPWSTR, UINT*);
 
 ////////////////////////////////////////
 // Here lies the hidden part on Xinput

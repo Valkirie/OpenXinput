@@ -1,6 +1,10 @@
 #include "OpenXinputInternal.h"
 #include <usbspec.h>
 
+#ifdef _DEBUG
+#include <stdio.h>
+#endif
+
 #if(_WIN32_WINNT >= _WIN32_WINNT_WIN10)
 // XInputEnable is deprecated since Windows 10, disable the warning if needed to build Xinput.
 #pragma warning(disable : 4995)
@@ -3439,6 +3443,13 @@ BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
             break;
 
         case DLL_PROCESS_ATTACH:
+#ifdef _DEBUG
+            AllocConsole();
+            {
+                FILE* pConsole = nullptr;
+                freopen_s(&pConsole, "CONOUT$", "w", stdout);
+            }
+#endif
             hr = RegisterUtcEventProvider();
             res = XInputCore::Initialize();
             if (hr >= 0)
@@ -3866,6 +3877,235 @@ DWORD WINAPI OpenXInputGetStateFull(_In_  DWORD dwUserIndex, _Out_ OPENXINPUT_ST
         result = XInputReturnCodeFromHRESULT(hr);
     }
     return result;
+}
+
+DWORD WINAPI OpenXInputGetDevicePath(_In_ DWORD dwUserIndex, _Out_writes_opt_(*pCount) LPWSTR pDevicePath, _Inout_ UINT* pCount)
+{
+    HRESULT hr;
+    DWORD result;
+    DeviceInfo_t* pDevice;
+
+    if (dwUserIndex >= XUSER_MAX_COUNT || pCount == nullptr)
+        return ERROR_BAD_ARGUMENTS;
+
+    hr = XInputCore::Enter();
+    if (hr < 0)
+        return XInputReturnCodeFromHRESULT(hr);
+
+    result = ERROR_DEVICE_NOT_CONNECTED;
+    if (dwUserIndex < g_dwDeviceListSize)
+    {
+        pDevice = g_pDeviceList[dwUserIndex];
+        if (pDevice != nullptr && pDevice->lpDevicePath != nullptr)
+        {
+            UINT required = pDevice->dwDevicePathSize; // includes null terminator
+            if (pDevicePath != nullptr)
+            {
+                if (*pCount < required)
+                {
+                    result = ERROR_INSUFFICIENT_BUFFER;
+                }
+                else
+                {
+                    memcpy(pDevicePath, pDevice->lpDevicePath, required * sizeof(WCHAR));
+                    result = ERROR_SUCCESS;
+                }
+            }
+            else
+            {
+                result = ERROR_SUCCESS;
+            }
+            *pCount = required;
+        }
+    }
+
+#ifdef _DEBUG
+    if (result == ERROR_SUCCESS && pDevicePath != nullptr)
+        printf("[OpenXInputGetDevicePath] Slot [%lu] -> Path: %ls\n", dwUserIndex, pDevicePath);
+    else if (result == ERROR_SUCCESS)
+        printf("[OpenXInputGetDevicePath] Slot [%lu] -> RequiredCount: %u\n", dwUserIndex, *pCount);
+    else if (result == ERROR_INSUFFICIENT_BUFFER)
+        printf("[OpenXInputGetDevicePath] Slot [%lu] -> Buffer too small (need %u, got %u)\n", dwUserIndex, *pCount, *pCount);
+    else
+        printf("[OpenXInputGetDevicePath] Slot [%lu] -> ERROR_DEVICE_NOT_CONNECTED\n", dwUserIndex);
+    fflush(stdout);
+#endif
+
+    XInputCore::Leave();
+    return result;
+}
+
+DWORD WINAPI OpenXInputGetUserIndex(_In_ LPCWSTR lpDevicePath, _Out_ BYTE* pUserIndex)
+{
+    HRESULT hr;
+    DWORD result = ERROR_DEVICE_NOT_CONNECTED;
+    DWORD limit;
+
+    if (lpDevicePath == nullptr || pUserIndex == nullptr)
+        return ERROR_BAD_ARGUMENTS;
+
+    hr = XInputCore::Enter();
+    if (hr < 0)
+        return XInputReturnCodeFromHRESULT(hr);
+
+    limit = g_dwDeviceListSize < (DWORD)XUSER_MAX_COUNT ? g_dwDeviceListSize : (DWORD)XUSER_MAX_COUNT;
+
+#ifdef _DEBUG
+    printf("[OpenXInputGetUserIndex] DevicePath: %ls\n", lpDevicePath);
+    printf("[OpenXInputGetUserIndex] Scanning %lu slot(s):\n", limit);
+    for (DWORD dbg = 0; dbg < limit; ++dbg)
+    {
+        DeviceInfo_t* pDbg = g_pDeviceList[dbg];
+        if (pDbg != nullptr)
+            printf("  XInput[%lu] VID:%04X PID:%04X BusDevIdx:%u Active:%-3s Path:%ls\n",
+                dbg,
+                (unsigned)pDbg->vendorId,
+                (unsigned)pDbg->productId,
+                (unsigned)pDbg->dwUserIndex,
+                XInputInternal::DeviceInfo::IsDeviceInactive(pDbg) ? "No" : "Yes",
+                pDbg->lpDevicePath ? pDbg->lpDevicePath : L"(null)");
+        else
+            printf("  XInput[%lu] (empty)\n", dbg);
+    }
+    fflush(stdout);
+#endif
+
+    for (DWORD i = 0; i < limit; ++i)
+    {
+        DeviceInfo_t* pDevice = g_pDeviceList[i];
+        if (pDevice != nullptr && pDevice->lpDevicePath != nullptr &&
+            _wcsicmp(pDevice->lpDevicePath, lpDevicePath) == 0 /* &&
+            !XInputInternal::DeviceInfo::IsDeviceInactive(pDevice)*/)
+        {
+            *pUserIndex = (BYTE)i;
+            result = ERROR_SUCCESS;
+            break;
+        }
+    }
+
+#ifdef _DEBUG
+    if (result == ERROR_SUCCESS)
+        printf("[OpenXInputGetUserIndex] Match at XInput slot [%u]\n", (unsigned)*pUserIndex);
+    else
+        printf("[OpenXInputGetUserIndex] No match found\n");
+    fflush(stdout);
+#endif
+
+    XInputCore::Leave();
+    return result;
+}
+
+DWORD WINAPI OpenXInputSetUserIndex(_In_ LPCWSTR lpDevicePath, _In_ BYTE dwUserIndex, _In_ BOOL bPowerDownOnChange)
+{
+    HRESULT hr;
+    DWORD srcIndex = XUSER_MAX_COUNT;
+    DeviceInfo_t* pDevice;
+    DeviceInfo_t* pDisplacedDevice;
+    DWORD limit;
+
+    if (lpDevicePath == nullptr || dwUserIndex >= XUSER_MAX_COUNT)
+        return ERROR_BAD_ARGUMENTS;
+
+    hr = XInputCore::Enter();
+    if (hr < 0)
+        return XInputReturnCodeFromHRESULT(hr);
+
+    limit = g_dwDeviceListSize < (DWORD)XUSER_MAX_COUNT ? g_dwDeviceListSize : (DWORD)XUSER_MAX_COUNT;
+
+#ifdef _DEBUG
+    printf("[OpenXInputSetUserIndex] DevicePath: %ls | TargetSlot: %u\n", lpDevicePath, (unsigned)dwUserIndex);
+    printf("[OpenXInputSetUserIndex] Scanning %lu slot(s):\n", limit);
+    for (DWORD dbg = 0; dbg < limit; ++dbg)
+    {
+        DeviceInfo_t* pDbg = g_pDeviceList[dbg];
+        if (pDbg != nullptr)
+            printf("  XInput[%lu] VID:%04X PID:%04X BusDevIdx:%u Active:%-3s Path:%ls\n",
+                dbg,
+                (unsigned)pDbg->vendorId,
+                (unsigned)pDbg->productId,
+                (unsigned)pDbg->dwUserIndex,
+                XInputInternal::DeviceInfo::IsDeviceInactive(pDbg) ? "No" : "Yes",
+                pDbg->lpDevicePath ? pDbg->lpDevicePath : L"(null)");
+        else
+            printf("  XInput[%lu] (empty)\n", dbg);
+    }
+    fflush(stdout);
+#endif
+
+    for (DWORD i = 0; i < limit; ++i)
+    {
+        pDevice = g_pDeviceList[i];
+        if (pDevice != nullptr && pDevice->lpDevicePath != nullptr &&
+            _wcsicmp(pDevice->lpDevicePath, lpDevicePath) == 0 /* &&
+            !XInputInternal::DeviceInfo::IsDeviceInactive(pDevice)*/)
+        {
+            srcIndex = i;
+            break;
+        }
+    }
+
+    if (srcIndex == XUSER_MAX_COUNT)
+    {
+#ifdef _DEBUG
+        printf("[OpenXInputSetUserIndex] No match found -> ERROR_DEVICE_NOT_CONNECTED\n");
+        fflush(stdout);
+#endif
+        XInputCore::Leave();
+        return ERROR_DEVICE_NOT_CONNECTED;
+    }
+
+    if (srcIndex == (DWORD)dwUserIndex)
+    {
+#ifdef _DEBUG
+        printf("[OpenXInputSetUserIndex] Device already at slot [%u] -> ERROR_SUCCESS\n", (unsigned)dwUserIndex);
+        fflush(stdout);
+#endif
+        XInputCore::Leave();
+        return ERROR_SUCCESS;
+    }
+
+    if ((DWORD)dwUserIndex >= g_dwDeviceListSize)
+    {
+        hr = GrowList(dwUserIndex + 1);
+        if (hr < 0)
+        {
+            XInputCore::Leave();
+            return XInputReturnCodeFromHRESULT(hr);
+        }
+    }
+
+    pDevice          = g_pDeviceList[srcIndex];
+    pDisplacedDevice = g_pDeviceList[dwUserIndex];
+
+    g_pDeviceList[dwUserIndex] = pDevice;
+    g_pDeviceList[srcIndex]    = pDisplacedDevice;
+
+#ifdef _DEBUG
+    printf("[OpenXInputSetUserIndex] Moved VID:%04X PID:%04X from slot [%lu] to slot [%u]",
+        (unsigned)pDevice->vendorId, (unsigned)pDevice->productId, srcIndex, (unsigned)dwUserIndex);
+    if (pDisplacedDevice != nullptr)
+        printf(", swapped with VID:%04X PID:%04X now at slot [%lu]",
+            (unsigned)pDisplacedDevice->vendorId, (unsigned)pDisplacedDevice->productId, srcIndex);
+    printf("\n");
+    fflush(stdout);
+#endif
+
+    if (Utilities::IsSettingSet(SET_USER_LED_ON_CREATE))
+    {
+        DriverComm::SendLEDState(pDevice, Protocol::LEDState::XINPUT_PORT_TO_LED_MAP[dwUserIndex % MAX_XINPUT_PORT_TO_LED_MAP]);
+        if (pDisplacedDevice != nullptr)
+            DriverComm::SendLEDState(pDisplacedDevice, Protocol::LEDState::XINPUT_PORT_TO_LED_MAP[srcIndex % MAX_XINPUT_PORT_TO_LED_MAP]);
+    }
+
+    if (bPowerDownOnChange)
+    {
+        DriverComm::PowerOffController(pDevice);
+        if (pDisplacedDevice != nullptr)
+            DriverComm::PowerOffController(pDisplacedDevice);
+    }
+
+    XInputCore::Leave();
+    return ERROR_SUCCESS;
 }
 
 #ifdef __cplusplus
