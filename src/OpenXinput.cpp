@@ -39,8 +39,9 @@ struct DeviceInfo_t {
     SIZE_T field_1C;
     WORD XUSBVersion;
     WORD field_22;
-    OPENXINPUT_STATE_FULL DeviceState;
+    XINPUT_STATE DeviceState;
     XINPUT_VIBRATION DeviceVibration;
+    XINPUT_SYSTEM_BUTTONS SystemButtons;
     WORD field_38;
     WORD vendorId;
     WORD productId;
@@ -259,7 +260,7 @@ struct GamepadBatteryInformation0102
 
 struct GetStateApiParam_t
 {
-    OPENXINPUT_STATE_FULL* pState;
+    XINPUT_STATE* pState;
 };
 
 struct SetStateApiParam_t
@@ -310,6 +311,11 @@ struct WaitForGuideButtonHelperApiParam_t
 struct GetBaseBusInformationApiParam_t
 {
     XINPUT_BASE_BUS_INFORMATION* pBaseBusInformation;
+};
+
+struct GetSystemButtonsApiParam_t
+{
+    XINPUT_SYSTEM_BUTTONS* pSystemButtons;
 };
 
 struct GetDeviceUSBIdsApiParam_t
@@ -499,10 +505,12 @@ namespace DeviceInfo {
 namespace Enabled {
     HRESULT GetState(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
     HRESULT SetVibration(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
+    HRESULT GetSystemButtons(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
 }
 namespace Disabled {
     HRESULT GetState(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
     HRESULT SetVibration(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
+    HRESULT GetSystemButtons(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
 }
 
 DeviceInfo_t* Create(HANDLE hDevice, LPCWSTR lpDevicePath);
@@ -527,6 +535,7 @@ HRESULT GetDeviceUSBIds(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
 
 static HRESULT(*g_pfnGetStateDispatcher)(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
 static HRESULT(*g_pfnSetVibrationDispatcher)(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
+static HRESULT(*g_pfnGetSystemButtonsDispatcher)(DeviceInfo_t* pDevice, void* pParams, DWORD reserved);
 
 }
 }
@@ -833,16 +842,14 @@ HRESULT GrowList(DWORD newSize)
 
 void CopyGamepadStateToDeviceInfo(DeviceInfo_t* pDevice, GamepadState0100 *pGamepadState)
 {
-    pDevice->DeviceState.XinputState.dwPacketNumber = pGamepadState->dwPacketNumber;
-    pDevice->DeviceState.XinputState.Gamepad.bLeftTrigger = pGamepadState->bLeftTrigger;
-    pDevice->DeviceState.XinputState.Gamepad.bRightTrigger = pGamepadState->bRightTrigger;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbLX = pGamepadState->sThumbLX;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbLY = pGamepadState->sThumbLY;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbRX = pGamepadState->sThumbRX;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbRY = pGamepadState->sThumbRY;
-    pDevice->DeviceState.XinputState.Gamepad.wButtons = pGamepadState->wButtons;
-
-    pDevice->DeviceState.GamepadExtras.dwExtraButtons = 0;
+    pDevice->DeviceState.dwPacketNumber = pGamepadState->dwPacketNumber;
+    pDevice->DeviceState.Gamepad.bLeftTrigger = pGamepadState->bLeftTrigger;
+    pDevice->DeviceState.Gamepad.bRightTrigger = pGamepadState->bRightTrigger;
+    pDevice->DeviceState.Gamepad.sThumbLX = pGamepadState->sThumbLX;
+    pDevice->DeviceState.Gamepad.sThumbLY = pGamepadState->sThumbLY;
+    pDevice->DeviceState.Gamepad.sThumbRX = pGamepadState->sThumbRX;
+    pDevice->DeviceState.Gamepad.sThumbRY = pGamepadState->sThumbRY;
+    pDevice->DeviceState.Gamepad.wButtons = pGamepadState->wButtons;
 
     if (pGamepadState->status == 1)
         pDevice->status |= DEVICE_STATUS_ACTIVE;
@@ -854,19 +861,18 @@ void CopyGamepadStateToDeviceInfo(DeviceInfo_t* pDevice, GamepadState0100 *pGame
 
 void CopyGamepadStateToDeviceInfo(DeviceInfo_t* pDevice, GamepadState0101* pGamepadState)
 {
-    pDevice->DeviceState.XinputState.dwPacketNumber = pGamepadState->dwPacketNumber;
-    pDevice->DeviceState.XinputState.Gamepad.bLeftTrigger = pGamepadState->bLeftTrigger;
-    pDevice->DeviceState.XinputState.Gamepad.bRightTrigger = pGamepadState->bRightTrigger;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbLX = pGamepadState->sThumbLX;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbLY = pGamepadState->sThumbLY;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbRX = pGamepadState->sThumbRX;
-    pDevice->DeviceState.XinputState.Gamepad.sThumbRY = pGamepadState->sThumbRY;
-    pDevice->DeviceState.XinputState.Gamepad.wButtons = pGamepadState->wButtons;
-    pDevice->DeviceState.XinputState.Gamepad.wButtons &= XINPUT_BUTTON_MASK;
+    pDevice->DeviceState.dwPacketNumber = pGamepadState->dwPacketNumber;
+    pDevice->DeviceState.Gamepad.bLeftTrigger = pGamepadState->bLeftTrigger;
+    pDevice->DeviceState.Gamepad.bRightTrigger = pGamepadState->bRightTrigger;
+    pDevice->DeviceState.Gamepad.sThumbLX = pGamepadState->sThumbLX;
+    pDevice->DeviceState.Gamepad.sThumbLY = pGamepadState->sThumbLY;
+    pDevice->DeviceState.Gamepad.sThumbRX = pGamepadState->sThumbRX;
+    pDevice->DeviceState.Gamepad.sThumbRY = pGamepadState->sThumbRY;
+    pDevice->DeviceState.Gamepad.wButtons = pGamepadState->wButtons;
+    pDevice->DeviceState.Gamepad.wButtons &= XINPUT_BUTTON_MASK;
 
-    pDevice->DeviceState.GamepadExtras.dwExtraButtons = 0;
-    if (pGamepadState->bExtraButtons & 0x01)
-        pDevice->DeviceState.GamepadExtras.dwExtraButtons |= OPENXINPUT_GAMEPAD_EXTRAS_SHARE;
+    pDevice->SystemButtons.StandardSystemButtons = pGamepadState->wButtons & XINPUT_GAMEPAD_GUIDE;
+    pDevice->SystemButtons.ExtraSystemButtons = pGamepadState->bExtraButtons & XINPUT_GAMEPAD_EXTRAS_SHARE;
 
     if (pGamepadState->status == 1)
         pDevice->status |= DEVICE_STATUS_ACTIVE;
@@ -1573,6 +1579,20 @@ HRESULT SetVibration(DeviceInfo_t* pDevice, void* pParams, DWORD reserved)
     return DriverComm::SendDeviceVibration(pDevice);
 }
 
+HRESULT GetSystemButtons(DeviceInfo_t* pDevice, void* pParams, DWORD reserved)
+{
+    HRESULT hr;
+    GetSystemButtonsApiParam_t* pApiParam = (GetSystemButtonsApiParam_t*)pParams;
+
+    if (IsDeviceInactive(pDevice))
+        return E_FAIL;
+
+    if ((hr = DriverComm::GetLatestDeviceInfo(pDevice)) < 0)
+        return hr;
+
+    return Utilities::SafeCopyToUntrustedBuffer(pApiParam->pSystemButtons, &pDevice->SystemButtons, sizeof(XINPUT_SYSTEM_BUTTONS));
+}
+
 }
 
 namespace Disabled {
@@ -1585,8 +1605,8 @@ HRESULT GetState(DeviceInfo_t* pDevice, void* pParams, DWORD reserved)
     if (IsDeviceInactive(pDevice))
         return E_FAIL;
 
-    if (Utilities::SafeCopyToUntrustedBuffer(pApiParam->pState, &DisabledXINPUT_STATE, sizeof(XINPUT_STATE)) >= 0)
-        pApiParam->pState->XinputState.dwPacketNumber = pDevice->DeviceState.XinputState.dwPacketNumber + 1;
+    if (Utilities::SafeCopyToUntrustedBuffer(pApiParam->pState, &DisabledXINPUT_STATE, sizeof(DisabledXINPUT_STATE)) >= 0)
+        pApiParam->pState->dwPacketNumber = pDevice->DeviceState.dwPacketNumber + 1;
 
     return S_OK;
 }
@@ -1601,12 +1621,23 @@ HRESULT SetVibration(DeviceInfo_t* pDevice, void* pParams, DWORD reserved)
 
     if (pApiParam->pVibration != nullptr)
     {
-        return Utilities::SafeCopyToUntrustedBuffer(&pDevice->DeviceVibration, pApiParam->pVibration, sizeof(XINPUT_VIBRATION));
+        return Utilities::SafeCopyToUntrustedBuffer(&pDevice->DeviceVibration, pApiParam->pVibration, sizeof(*pApiParam->pVibration));
     }
     CopyMemory(&tmpDevice, pDevice, sizeof(DeviceInfo_t));
     tmpDevice.DeviceVibration.wLeftMotorSpeed = 0;
     tmpDevice.DeviceVibration.wRightMotorSpeed = 0;
     return DriverComm::SendDeviceVibration(&tmpDevice);
+}
+
+HRESULT GetSystemButtons(DeviceInfo_t* pDevice, void* pParams, DWORD reserved)
+{
+    static XINPUT_SYSTEM_BUTTONS DisabledSystemButtons = {};
+    GetSystemButtonsApiParam_t* pApiParam = (GetSystemButtonsApiParam_t*)pParams;
+
+    if (IsDeviceInactive(pDevice))
+        return E_FAIL;
+
+    return Utilities::SafeCopyToUntrustedBuffer(pApiParam->pSystemButtons, &DisabledSystemButtons, sizeof(DisabledSystemButtons));
 }
 
 }
@@ -1697,11 +1728,13 @@ void OnEnableSettingChanged(BOOL bEnabled)
     {
         g_pfnGetStateDispatcher = Enabled::GetState;
         g_pfnSetVibrationDispatcher = Enabled::SetVibration;
+        g_pfnGetSystemButtonsDispatcher = Enabled::GetSystemButtons;
     }
     else
     {
         g_pfnGetStateDispatcher = Disabled::GetState;
         g_pfnSetVibrationDispatcher = Disabled::SetVibration;
+        g_pfnGetSystemButtonsDispatcher = Disabled::GetSystemButtons;
     }
 }
 
@@ -3054,7 +3087,7 @@ DWORD Controller_GetUserKeystroke(DeviceInfo_t* pDevice, BYTE bUserIndex, DWORD 
     static DWORD s_dwKeyPressStart;
     static BOOL  s_bKeyDown;
 
-    OPENXINPUT_STATE_FULL gamepadState;
+    XINPUT_STATE gamepadState;
     GetStateApiParam_t apiParam;
     DWORD virtualKey;
     int key;
@@ -3065,14 +3098,14 @@ DWORD Controller_GetUserKeystroke(DeviceInfo_t* pDevice, BYTE bUserIndex, DWORD 
     if (XInputInternal::DeviceInfo::g_pfnGetStateDispatcher(pDevice, &apiParam, 1) < 0)
         return ERROR_EMPTY;
 
-    gamepadState.XinputState.Gamepad.wButtons &= XINPUT_BUTTON_MASK_WITHOUT_GUIDE;
+    gamepadState.Gamepad.wButtons &= XINPUT_BUTTON_MASK_WITHOUT_GUIDE;
 
     pKeystroke->UserIndex = bUserIndex;
     pKeystroke->Unicode = 0;
 
     key = 0;
 
-    virtualKey = Controller_CalculateKeyFromThumbPos(VK_PAD_LTHUMB_UP, gamepadState.XinputState.Gamepad.sThumbLX, gamepadState.XinputState.Gamepad.sThumbLY);
+    virtualKey = Controller_CalculateKeyFromThumbPos(VK_PAD_LTHUMB_UP, gamepadState.Gamepad.sThumbLX, gamepadState.Gamepad.sThumbLY);
     pKeystroke->VirtualKey = (WORD)virtualKey;
     if (pDevice->LeftStickVirtualKey != virtualKey)
     {
@@ -3088,7 +3121,7 @@ DWORD Controller_GetUserKeystroke(DeviceInfo_t* pDevice, BYTE bUserIndex, DWORD 
         pDevice->LeftStickVirtualKey = (WORD)virtualKey;
     }
 
-    virtualKey = Controller_CalculateKeyFromThumbPos(VK_PAD_RTHUMB_UP, gamepadState.XinputState.Gamepad.sThumbRX, gamepadState.XinputState.Gamepad.sThumbRY);
+    virtualKey = Controller_CalculateKeyFromThumbPos(VK_PAD_RTHUMB_UP, gamepadState.Gamepad.sThumbRX, gamepadState.Gamepad.sThumbRY);
 
     if (virtualKey)
         pKeystroke->VirtualKey = (WORD)virtualKey;
@@ -3107,9 +3140,9 @@ DWORD Controller_GetUserKeystroke(DeviceInfo_t* pDevice, BYTE bUserIndex, DWORD 
     }
 
     pressedTriggers = 0;
-    if (gamepadState.XinputState.Gamepad.bLeftTrigger > 30u)
+    if (gamepadState.Gamepad.bLeftTrigger > 30u)
         pressedTriggers = 1;
-    if (gamepadState.XinputState.Gamepad.bRightTrigger > 30u)
+    if (gamepadState.Gamepad.bRightTrigger > 30u)
         pressedTriggers = 2;
 
     virtualKey = VK_PAD_LTRIGGER;
@@ -3149,7 +3182,7 @@ DWORD Controller_GetUserKeystroke(DeviceInfo_t* pDevice, BYTE bUserIndex, DWORD 
 
         if(pDevice->wButtons & keyBit)
         {
-            if (!(gamepadState.XinputState.Gamepad.wButtons & keyBit))
+            if (!(gamepadState.Gamepad.wButtons & keyBit))
             {
                 pDevice->wButtons &= ~keyBit;
                 pKeystroke->VirtualKey = (WORD)virtualKey;
@@ -3159,7 +3192,7 @@ DWORD Controller_GetUserKeystroke(DeviceInfo_t* pDevice, BYTE bUserIndex, DWORD 
             }
             pKeystroke->VirtualKey = (WORD)virtualKey;
         }
-        else if (gamepadState.XinputState.Gamepad.wButtons & keyBit)
+        else if (gamepadState.Gamepad.wButtons & keyBit)
         {
             pDevice->wButtons |= keyBit;
             key = virtualKey;
@@ -3736,14 +3769,22 @@ DWORD WINAPI OpenXInputGetStateEx(_In_ DWORD dwUserIndex, _Out_ XINPUT_STATE* pS
 {
     DWORD result;
     HRESULT hr;
-    OPENXINPUT_STATE_FULL stateFull;
+    GetStateApiParam_t apiParam;
 
-    result = OpenXInputGetStateFull(dwUserIndex, &stateFull);
-    if (result == ERROR_SUCCESS)
+    if (dwUserIndex >= XUSER_MAX_COUNT || pState == nullptr)
+        return ERROR_BAD_ARGUMENTS;
+
+    if (XInputCore::g_pfnXInputGetState_Override)
     {
-        memcpy(pState, &stateFull.XinputState, sizeof(XINPUT_STATE));
+        result = XInputCore::g_pfnXInputGetState_Override(dwUserIndex, pState);
     }
+    else
+    {
+        apiParam.pState = pState;
 
+        hr = XInputCore::ProcessAPIRequest(dwUserIndex, XInputInternal::DeviceInfo::g_pfnGetStateDispatcher, &apiParam, 1, FALSE);
+        result = XInputReturnCodeFromHRESULT(hr);
+    }
     return result;
 }
 
@@ -3832,6 +3873,37 @@ DWORD WINAPI OpenXInputGetCapabilitiesEx(_In_ DWORD dwReserved, _In_ DWORD dwUse
     return result;
 }
 
+DWORD WINAPI OpenXInputGetSystemButtons(
+    _In_ DWORD dwUserIndex,
+    _In_ XINPUT_SYSTEM_BUTTONS* pSystemButtons,
+    _In_ PVOID vReserved)
+{
+    DWORD result;
+    HRESULT hr;
+    GetSystemButtonsApiParam_t apiParam;
+
+    if (dwUserIndex >= XUSER_MAX_COUNT || pSystemButtons == nullptr)
+        return ERROR_BAD_ARGUMENTS;
+
+    if (XInputCore::g_pfnXInputGetState_Override != nullptr)
+    {
+        result = ERROR_ACCESS_DENIED;
+    }
+    else
+    {
+        apiParam.pSystemButtons = pSystemButtons;
+        hr = XInputCore::ProcessAPIRequest(
+            dwUserIndex,
+            XInputInternal::DeviceInfo::g_pfnGetSystemButtonsDispatcher,
+            &apiParam,
+            1,
+            FALSE);
+        result = XInputReturnCodeFromHRESULT(hr);
+    }
+
+    return result;
+}
+
 DWORD WINAPI OpenXInputGetMaxControllerCount()
 {
     return XUSER_MAX_COUNT;
@@ -3856,11 +3928,12 @@ DWORD WINAPI OpenXInputGetDeviceUSBIds(DWORD dwUserIndex, WORD* pVendorId, WORD*
     return result;
 }
 
-DWORD WINAPI OpenXInputGetStateFull(_In_  DWORD dwUserIndex, _Out_ OPENXINPUT_STATE_FULL* pState)
+DWORD WINAPI OpenXInputGetStateFull(_In_ DWORD dwUserIndex, _Out_ OPENXINPUT_STATE_FULL* pState)
 {
     DWORD result;
     HRESULT hr;
-    GetStateApiParam_t apiParam;
+    GetStateApiParam_t getStateApiParam;
+    GetSystemButtonsApiParam_t getSystemButtonsApiParam;
 
     if (dwUserIndex >= XUSER_MAX_COUNT || pState == nullptr)
         return ERROR_BAD_ARGUMENTS;
@@ -3871,9 +3944,15 @@ DWORD WINAPI OpenXInputGetStateFull(_In_  DWORD dwUserIndex, _Out_ OPENXINPUT_ST
     }
     else
     {
-        apiParam.pState = pState;
+        getStateApiParam.pState = &pState->XinputState;
 
-        hr = XInputCore::ProcessAPIRequest(dwUserIndex, XInputInternal::DeviceInfo::g_pfnGetStateDispatcher, &apiParam, 1, FALSE);
+        hr = XInputCore::ProcessAPIRequest(dwUserIndex, XInputInternal::DeviceInfo::g_pfnGetStateDispatcher, &getStateApiParam, 1, FALSE);
+        if (hr == S_OK)
+        {
+            getSystemButtonsApiParam.pSystemButtons = &pState->XinputSystemButtons;
+            hr = XInputCore::ProcessAPIRequest(dwUserIndex, XInputInternal::DeviceInfo::g_pfnGetSystemButtonsDispatcher, &getSystemButtonsApiParam, 1, FALSE);
+        }
+
         result = XInputReturnCodeFromHRESULT(hr);
     }
     return result;
