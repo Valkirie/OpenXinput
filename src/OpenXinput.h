@@ -456,6 +456,9 @@ extern "C" {
 typedef DWORD(WINAPI OpenXInputGetMaxControllerCount_t)();
 typedef DWORD(WINAPI OpenXInputGetDeviceUSBIds_t)(DWORD, WORD*, WORD*, WORD*);
 typedef DWORD(WINAPI OpenXInputGetStateFull_t)(DWORD, OPENXINPUT_STATE_FULL*);
+typedef DWORD(WINAPI OpenXInputGetUserIndex_t)(LPCWSTR, BYTE*);
+typedef DWORD(WINAPI OpenXInputSetUserIndex_t)(LPCWSTR, BYTE, BOOL);
+typedef DWORD(WINAPI OpenXInputGetDevicePath_t)(DWORD, LPWSTR, UINT*);
 
 
 #ifdef __cplusplus
