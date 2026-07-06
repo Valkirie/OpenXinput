@@ -562,7 +562,7 @@ HRESULT GetDeviceOnPort(DWORD dwUserIndex, DeviceInfo_t** ppDevice, bool rescan)
 /////////////////////////////////////////////////////
 namespace DeviceList {
 
-constexpr size_t InitialDeviceListSize = XUSER_MAX_COUNT * 2;
+constexpr size_t InitialDeviceListSize = XUSER_MAX_COUNT;
 constexpr size_t BusDeviceListSize = 16;
 
 HRESULT Initialize();
@@ -570,6 +570,7 @@ HRESULT Close();
 
 HRESULT SetDeviceOnPort(DWORD dwUserIndex, DeviceInfo_t* pDevice);
 HRESULT GetDeviceOnPort(DWORD dwUserIndex, DeviceInfo_t** ppDevice);
+HRESULT RemoveDeviceFromPort(DWORD dwUserIndex);
 void RemoveBusDevice(DWORD dwBusIndex);
 
 HRESULT IsDevicePresent(DeviceInfo_t* pDevice);
@@ -3971,6 +3972,8 @@ DWORD WINAPI OpenXInputGetDevicePath(_In_ DWORD dwUserIndex, _Out_writes_opt_(*p
     if (hr < 0)
         return XInputReturnCodeFromHRESULT(hr);
 
+    EnumerateXInputDevices();
+
     result = ERROR_DEVICE_NOT_CONNECTED;
     if (dwUserIndex < g_dwDeviceListSize)
     {
@@ -4026,6 +4029,8 @@ DWORD WINAPI OpenXInputGetUserIndex(_In_ LPCWSTR lpDevicePath, _Out_ BYTE* pUser
     hr = XInputCore::Enter();
     if (hr < 0)
         return XInputReturnCodeFromHRESULT(hr);
+
+    EnumerateXInputDevices();
 
     limit = g_dwDeviceListSize < (DWORD)XUSER_MAX_COUNT ? g_dwDeviceListSize : (DWORD)XUSER_MAX_COUNT;
 
